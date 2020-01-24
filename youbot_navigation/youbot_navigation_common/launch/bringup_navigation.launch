@@ -1,0 +1,12 @@
+<!-- Launch file to brin up all essentioal nodes for navigation with obstagle avoidance.
+This scrip doe not start any SLAM algorithm.
+-->
+
+<launch>
+
+        <include file="$(find youbot_driver_ros_interface)/launch/youbot_driver.launch" />
+        <include file="$(find youbot_navigation_common)/launch/base_front_hokuyo_node.launch" />
+        <include file="$(find youbot_navigation_local)/launch/move_base_local.launch" />
+
+</launch>
+
