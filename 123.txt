@@ -1,7 +1,0 @@
-make txt file in term
-
-change file via github
-
-second change file via github
-
-third change with change in test branch
