@@ -15,7 +15,6 @@ from nav_msgs.msg import Odometry
 # from bac_task.msg import CartesianTrajectory
 # from bac_task.msg import CameraFeatures
 
-
 lock = threading.Lock()
 
 class YoubotController:
@@ -24,7 +23,7 @@ class YoubotController:
         #self.cart_trajectory = None
         self.odometry = Odometry()
         self.next_t = 2.0
-        self.CONST_VELOCITY = 0.03
+        self.CONST_VELOCITY = 0.05
         self.CONST_OMEGA = 0.15
 
         "ROS stuff"
@@ -71,33 +70,60 @@ class YoubotController:
 
         #GOAL POSITION
         theta = 90 * 3.14 / 180
-        #theta = 0.0
+        theta = 0.0
         goal_pose = Point(0.0, 0.0, theta)
 
         #print(self.odometry.pose.pose.position)
-        #self.odometry = self.odometry.pose
+        current_position = self.odometry.pose.pose.position
         q = self.odometry.pose.pose.orientation     # quaternion
         rpy = tftr.euler_from_quaternion((q.x, q.y, q.z, q.w))  # roll pitch yaw
         # print(xyz.x, xyz.y)
         #print(self.odometry_x)
 
-        #ERROR
-        x_error = goal_pose.x - self.odometry.pose.pose.position.x
-        y_error = goal_pose.y - self.odometry.pose.pose.position.y
-        theta_error = goal_pose.z - rpy[2]#self.odometry.pose.pose.orientation.z
-        distance = sqrt(x_error ** 2 + y_error ** 2)
-        print(rpy[2])
+        #ERROR I WORLD COORDINATES
+        x_error_world = goal_pose.x - current_position.x#self.odometry.pose.pose.position.x
+        y_error_world = goal_pose.y - current_position.y#self.odometry.pose.pose.position.y
+        theta_error = goal_pose.z - rpy[2]              #self.odometry.pose.pose.orientation.z
+        distance = sqrt(x_error_world ** 2 + y_error_world ** 2)
+        #print(rpy[2])
+        print("distance: " + str(distance) + " th_er: " + str(theta_error))
         
+        if theta_error >= math.pi:
+            theta_error -= 2*math.pi
+        elif theta_error < -math.pi:
+            theta_error += 2*math.pi
 
         #EVALUATE VELOCITY
-        Vx = x_error * self.CONST_VELOCITY / distance
-        Vy = y_error * self.CONST_VELOCITY / distance
-        Wz = 0.1 * theta_error
+        Vx = x_error_world * self.CONST_VELOCITY / distance
+        Vy = y_error_world * self.CONST_VELOCITY / distance
+        # Vx = x_error * 0.1
+        # Vy = y_error * 0.1
+        if theta_error == 0.0:
+            Wz = 0.0
+        else:
+            Wz = self.CONST_OMEGA * theta_error / abs(theta_error)
 
-        if distance > 0.02 or abs(theta_error) > 0.05:
-            self.send_velocity(Vx, Vy, Wz)
-            print("distance", distance, "theta_error", theta_error)
-            print("send vel")
+        #TRANSFORM VELOCITY TO LOCAL COORDINATES
+        Vx_local = Vx * cos(-rpy[2]) - Vy * sin(-rpy[2])
+        Vy_local = Vx * sin(-rpy[2]) + Vy * cos(-rpy[2])
+
+        if distance > 0.02:
+            if abs(theta_error) > 0.01:
+                self.send_velocity(Vx_local, Vy_local, Wz)
+                #print("distance", distance)
+                #print("send vel")
+            else:
+                self.send_velocity(Vx_local, Vy_local, 0.0)
+        else:
+            if abs(theta_error) > 0.01:
+                self.send_velocity(0.0, 0.0, Wz)
+            else:
+                self.stop()
+
+        # if distance > 0.02:
+        #     self.send_velocity(Vx_local, Vy_local, 0.2)
+        # else:
+        #     self.stop()
 
 
 if __name__ == '__main__':
