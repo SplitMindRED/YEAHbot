@@ -23,7 +23,7 @@ class YoubotController:
         #self.cart_trajectory = None
         self.odometry = Odometry()
         self.next_t = 2.0
-        self.CONST_VELOCITY = 0.05
+        self.CONST_VELOCITY = 0.08
         self.CONST_OMEGA = 0.15
 
         "ROS stuff"
@@ -31,6 +31,12 @@ class YoubotController:
         self.odometry_sub = rospy.Subscriber("/odom", Odometry, self.odometry_callback)
         #rospy.Subscriber('chatter', String, callback)
         self.velocity_pub = rospy.Publisher('/cmd_vel', Twist, queue_size = 1)
+
+        self.trajectory = []#Point(0.0, 0.0, 0.0)
+        self.StepTrajectory = 0
+
+        self.make_trajectory()
+        self.NumberOfSteps = len(self.trajectory)
 
     # def cart_trajectory_callback(self, msg):
     #     """
@@ -40,6 +46,11 @@ class YoubotController:
     #     lock.acquire()
     #     self.cart_trajectory = msg
     #     lock.release()
+
+    def make_trajectory(self):
+        self.trajectory.append(Point(1.0, 0.0, 0.0))
+        self.trajectory.append(Point(1.0, 0.0, math.pi))
+        self.trajectory.append(Point(0.0, 0.0, math.pi))
 
     def odometry_callback(self, msg):
         """
@@ -68,62 +79,67 @@ class YoubotController:
     def update(self, t):
         #print(t)
 
-        #GOAL POSITION
-        theta = 90 * 3.14 / 180
-        theta = 0.0
-        goal_pose = Point(0.0, 0.0, theta)
+        while self.StepTrajectory <= self.NumberOfSteps:
 
-        #print(self.odometry.pose.pose.position)
-        current_position = self.odometry.pose.pose.position
-        q = self.odometry.pose.pose.orientation     # quaternion
-        rpy = tftr.euler_from_quaternion((q.x, q.y, q.z, q.w))  # roll pitch yaw
-        # print(xyz.x, xyz.y)
-        #print(self.odometry_x)
+            #GOAL POSITION
+            theta = 90 * 3.14 / 180
+            theta = 0.0
+            #goal_pose = Point(2.5, 0.0, theta)
+            goal_pose = self.trajectory[self.StepTrajectory]
 
-        #ERROR I WORLD COORDINATES
-        x_error_world = goal_pose.x - current_position.x#self.odometry.pose.pose.position.x
-        y_error_world = goal_pose.y - current_position.y#self.odometry.pose.pose.position.y
-        theta_error = goal_pose.z - rpy[2]              #self.odometry.pose.pose.orientation.z
-        distance = sqrt(x_error_world ** 2 + y_error_world ** 2)
-        #print(rpy[2])
-        print("distance: " + str(distance) + " th_er: " + str(theta_error))
-        
-        if theta_error >= math.pi:
-            theta_error -= 2*math.pi
-        elif theta_error < -math.pi:
-            theta_error += 2*math.pi
+            #print(self.NumberOfSteps, self.trajectory[1])
 
-        #EVALUATE VELOCITY
-        Vx = x_error_world * self.CONST_VELOCITY / distance
-        Vy = y_error_world * self.CONST_VELOCITY / distance
-        # Vx = x_error * 0.1
-        # Vy = y_error * 0.1
-        if theta_error == 0.0:
-            Wz = 0.0
-        else:
-            Wz = self.CONST_OMEGA * theta_error / abs(theta_error)
+            #print(self.odometry.pose.pose.position)
+            current_position = self.odometry.pose.pose.position
+            q = self.odometry.pose.pose.orientation     # quaternion
+            rpy = tftr.euler_from_quaternion((q.x, q.y, q.z, q.w))  # roll pitch yaw
+            # print(xyz.x, xyz.y)
+            #print(self.odometry_x)
 
-        #TRANSFORM VELOCITY TO LOCAL COORDINATES
-        Vx_local = Vx * cos(-rpy[2]) - Vy * sin(-rpy[2])
-        Vy_local = Vx * sin(-rpy[2]) + Vy * cos(-rpy[2])
+            #ERROR I WORLD COORDINATES
+            x_error_world = goal_pose.x - current_position.x
+            y_error_world = goal_pose.y - current_position.y
+            theta_error = goal_pose.z - rpy[2]
+            distance = sqrt(x_error_world ** 2 + y_error_world ** 2)
+            #print(rpy[2])
+            print("distance: " + str(distance) + " th_er: " + str(theta_error))
+            
+            if theta_error >= math.pi:
+                theta_error -= 2*math.pi
+            elif theta_error < -math.pi:
+                theta_error += 2*math.pi
 
-        if distance > 0.02:
-            if abs(theta_error) > 0.01:
-                self.send_velocity(Vx_local, Vy_local, Wz)
-                #print("distance", distance)
-                #print("send vel")
+            #EVALUATE VELOCITY
+            Vx = x_error_world * self.CONST_VELOCITY / distance
+            Vy = y_error_world * self.CONST_VELOCITY / distance
+
+            if theta_error == 0.0:
+                Wz = 0.0
             else:
-                self.send_velocity(Vx_local, Vy_local, 0.0)
-        else:
-            if abs(theta_error) > 0.01:
-                self.send_velocity(0.0, 0.0, Wz)
-            else:
-                self.stop()
+                Wz = self.CONST_OMEGA * theta_error / abs(theta_error)
 
-        # if distance > 0.02:
-        #     self.send_velocity(Vx_local, Vy_local, 0.2)
-        # else:
-        #     self.stop()
+            #TRANSFORM VELOCITY TO LOCAL COORDINATES
+            Vx_local = Vx * cos(-rpy[2]) - Vy * sin(-rpy[2])
+            Vy_local = Vx * sin(-rpy[2]) + Vy * cos(-rpy[2])
+
+            if distance > 0.005:
+                if abs(theta_error) > 0.01:
+                    self.send_velocity(Vx_local, Vy_local, Wz)
+                else:
+                    self.send_velocity(Vx_local, Vy_local, 0.0)
+            else:
+                if abs(theta_error) > 0.01:
+                    self.send_velocity(0.0, 0.0, Wz)
+                else:
+                    self.stop()
+                    self.StepTrajectory += 1
+            
+            break
+
+            # if distance > 0.02:
+            #     self.send_velocity(Vx_local, Vy_local, 0.2)
+            # else:
+            #     self.stop()
 
 
 if __name__ == '__main__':
